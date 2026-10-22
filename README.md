@@ -1,4 +1,4 @@
-# Práctica de CI - Docker + GitHub Actions + GHCR
+# Práctica de CI - Docker + GitHub Actions + GHCR + Docker Hub
 
 ## Objetivo
 Construir una aplicación web sencilla, verificarla y publicar una imagen de contenedor identificada por el commit de Git.
@@ -28,6 +28,19 @@ Ejecutar la imagen publicada desde una máquina con Docker:
 docker run --rm -p 8081:80 ghcr.io/USUARIO/REPOSITORIO:SHA_CORTO
 ```
 Si la imagen todavía no existe localmente, Docker la descargará automáticamente desde GHCR antes de iniciar el contenedor. Abrir http://localhost:8081 y verificar que se muestra la aplicación. Si la imagen es privada, será necesario autenticarse antes de ejecutarla.
+
+## Paso 4 - Docker Hub como segundo registro
+La misma imagen (construida y validada una sola vez) se publica también en Docker Hub, sin modificar el código ni el Dockerfile.
+
+Configuración en GitHub (**Settings > Secrets and variables > Actions**):
+- Variable `DOCKERHUB_USERNAME`: usuario de Docker Hub.
+- Secret `DOCKERHUB_TOKEN`: Personal Access Token de Docker Hub con permiso Read & Write.
+
+Cada push a `main` publica dos tags en cada registro: `latest` y el SHA corto del commit.
+```bash
+docker run --rm -p 8082:80 USUARIO_DOCKERHUB/dds-devops-demo:SHA_CORTO
+docker run --rm -p 8083:80 ghcr.io/USUARIO/REPOSITORIO:latest
+```
 
 ## Alcance
 Este workflow realiza integración continua y publicación de un artefacto. No realiza despliegue de una aplicación en la nube.

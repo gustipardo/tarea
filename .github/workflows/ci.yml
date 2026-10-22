@@ -1,4 +1,4 @@
-name: CI - Docker y GHCR
+name: CI - Docker, GHCR y Docker Hub
 
 on:
   push:
@@ -9,6 +9,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  LOCAL_IMAGE: dds-devops-demo:test
+  DOCKERHUB_REPO: dds-devops-demo
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -17,23 +21,27 @@ jobs:
       - name: Obtener codigo
         uses: actions/checkout@v4
 
-      - name: Definir nombre de imagen
+      - name: Definir nombres y tags de imagen
         id: image
         shell: bash
         run: |
-          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "ghcr=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=${{ vars.DOCKERHUB_USERNAME }}/${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # La imagen se construye y valida UNA sola vez
       - name: Construir imagen Docker
-        run: docker build -t dds-devops-demo:test .
+        run: docker build -t "$LOCAL_IMAGE" .
 
       - name: Verificar funcionamiento
         run: |
           docker run -d --name web-test \
             -p 127.0.0.1:8080:80 \
-            dds-devops-demo:test
+            "$LOCAL_IMAGE"
           for i in $(seq 1 15); do
             if curl -fsS http://127.0.0.1:8080/ | grep -q "Hola DevOps"; then
               echo "Prueba exitosa"
+              docker rm -f web-test
               exit 0
             fi
             sleep 1
@@ -48,12 +56,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Etiquetar imagen
+      - name: Autenticarse en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Etiquetar imagen para ambos registros
         run: |
-          docker tag dds-devops-demo:test \
-            ${{ steps.image.outputs.name }}:${GITHUB_SHA::7}
+          for repo in ${{ steps.image.outputs.ghcr }} ${{ steps.image.outputs.dockerhub }}; do
+            docker tag "$LOCAL_IMAGE" "$repo:${{ steps.image.outputs.sha }}"
+            docker tag "$LOCAL_IMAGE" "$repo:latest"
+          done
+          docker images
 
       - name: Publicar imagen en GHCR
         run: |
-          docker push \
-            ${{ steps.image.outputs.name }}:${GITHUB_SHA::7}
+          docker push ${{ steps.image.outputs.ghcr }}:${{ steps.image.outputs.sha }}
+          docker push ${{ steps.image.outputs.ghcr }}:latest
+
+      - name: Publicar imagen en Docker Hub
+        run: |
+          docker push ${{ steps.image.outputs.dockerhub }}:${{ steps.image.outputs.sha }}
+          docker push ${{ steps.image.outputs.dockerhub }}:latest
+
+      - name: Resumen
+        run: |
+          {
+            echo "### Imagenes publicadas"
+            echo "- \`${{ steps.image.outputs.ghcr }}:${{ steps.image.outputs.sha }}\`"
+            echo "- \`${{ steps.image.outputs.ghcr }}:latest\`"
+            echo "- \`${{ steps.image.outputs.dockerhub }}:${{ steps.image.outputs.sha }}\`"
+            echo "- \`${{ steps.image.outputs.dockerhub }}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
